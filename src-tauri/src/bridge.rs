@@ -55,7 +55,14 @@ fn emit(app: &AppHandle, event: UiEvent) {
             id,
             state: item_state,
             message,
-        } => json!({ "type": "itemState", "id": id, "state": item_state, "message": message }),
+            action,
+        } => json!({
+            "type": "itemState",
+            "id": id,
+            "state": item_state,
+            "message": message,
+            "action": action
+        }),
         UiEvent::ItemProgress { id, done, total } => {
             json!({ "type": "itemProgress", "id": id, "done": done, "total": total })
         }

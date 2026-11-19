@@ -4,7 +4,7 @@ import { store } from "../store";
 
 const links = [
   { icon: "code", title: "项目仓库", url: "待补充" },
-  { icon: "globe", title: "官方主页", url: "待补充" },
+  { icon: "info", title: "操作指南", url: "待补充" },
   { icon: "mail", title: "反馈建议", url: "待补充" },
 ];
 </script>
@@ -20,7 +20,7 @@ const links = [
       <div class="about-hero">
         <span class="about-mark">智爱</span>
         <span class="about-id">
-          <b>智爱媒体素材采集器</b>
+          <b>智爱媒体采集器</b>
           <small>Zhiai Media Collector</small>
         </span>
       </div>

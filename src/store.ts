@@ -1,5 +1,5 @@
 import { computed, reactive } from "vue";
-import { api, onCoreEvent } from "./api";
+import { api, describeError, onCoreEvent } from "./api";
 import type {
   CoreEvent,
   ImageItem,
@@ -14,6 +14,7 @@ export interface View {
   item: ImageItem;
   state: ItemState;
   message: string | null;
+  action: string | null;
   done: number;
   total: number;
   speed: number;
@@ -27,6 +28,7 @@ export interface View {
 }
 
 const DEFAULT_SETTINGS: Settings = {
+  schema_version: 1,
   theme: "Dark",
   download_root: "",
   concurrency: 4,
@@ -35,6 +37,9 @@ const DEFAULT_SETTINGS: Settings = {
   convert_target: "Jpg",
   jpeg_quality: 92,
   webp_quality: 85,
+  duplicate_policy: "AppendSuffix",
+  speed_limit_kbps: 0,
+  parse_interval_ms: 500,
 };
 
 export const store = reactive({
@@ -56,6 +61,7 @@ export const store = reactive({
     concurrency: 4,
   } as QueueStats,
   settings: { ...DEFAULT_SETTINGS } as Settings,
+  settingsNotice: null as { text: string; error: boolean } | null,
   history: [] as Array<import("./types").HistoryEntry>,
   album: null as { title: string; links: string[] } | null,
   page: null as "settings" | "library" | "about" | "transfers" | null,
@@ -110,6 +116,7 @@ function makeView(item: ImageItem): View {
     item,
     state: "Queued",
     message: null,
+    action: null,
     done: 0,
     total: 0,
     speed: 0,
@@ -173,6 +180,7 @@ function handleEvent(event: CoreEvent) {
       if (!view) break;
       view.state = event.state;
       view.message = event.message;
+      view.action = event.action ?? null;
       if (event.state === "Queued") view.speed = 0;
       break;
     }
@@ -243,24 +251,86 @@ export function syncDocumentTheme() {
 }
 
 let saveTimer: number | undefined;
+let noticeTimer: number | undefined;
+
+function setSettingsNotice(text: string, error: boolean) {
+  store.settingsNotice = { text, error };
+  window.clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => {
+    store.settingsNotice = null;
+  }, 3200);
+}
+
+async function persistSettings() {
+  try {
+    await api.updateSettings({ ...store.settings });
+    setSettingsNotice("设置已保存", false);
+  } catch (error) {
+    setSettingsNotice(`保存失败：${describeError(error)}`, true);
+  }
+}
 
 export function saveSettingsSoon() {
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
-    void api.updateSettings({ ...store.settings });
+    void persistSettings();
   }, 300);
 }
 
 export function saveSettingsNow() {
   window.clearTimeout(saveTimer);
-  void api.updateSettings({ ...store.settings });
+  void persistSettings();
+}
+
+export async function restoreDefaultSettings() {
+  try {
+    const settings = await api.resetSettings();
+    store.settings = { ...DEFAULT_SETTINGS, ...settings };
+    syncDocumentTheme();
+    void api.applyTheme(settings.theme.toLowerCase());
+    setSettingsNotice("已恢复默认设置", false);
+  } catch (error) {
+    setSettingsNotice(`恢复失败：${describeError(error)}`, true);
+  }
 }
 
 export function setTheme(mode: ThemeMode) {
   store.settings.theme = mode;
   syncDocumentTheme();
-  void api.applyTheme(mode.toLowerCase());
+  void api.applyTheme(mode.toLowerCase()).catch((error) => {
+    setSettingsNotice(`主题应用失败：${describeError(error)}`, true);
+  });
   saveSettingsSoon();
+}
+
+function restoreTasks(tasks: import("./types").TaskRecord[]) {
+  let restored = 0;
+  let queued = 0;
+  let failed = 0;
+  for (const task of tasks) {
+    if (task.state === "Completed" || task.state === "Skipped") continue;
+    const view = makeView(task.item);
+    view.state = task.state;
+    view.message = task.message;
+    view.path = task.path;
+    store.views[task.item.id] = view;
+    if (!store.queueIds.includes(task.item.id)) store.queueIds.push(task.item.id);
+    const key = dedupKey(task.item.url);
+    if (!seen.has(key)) {
+      seen.add(key);
+      store.order.push(task.item.id);
+    }
+    restored += 1;
+    if (task.state === "Queued") queued += 1;
+    if (task.state === "Failed") failed += 1;
+  }
+  if (restored > 0) {
+    store.stats.queued = queued;
+    store.stats.failed += failed;
+    store.stats.paused = queued > 0;
+    store.queuePinned = true;
+    store.status = `已恢复 ${restored} 个未完成任务，可在队列中继续或重试`;
+  }
 }
 
 export async function init() {
@@ -269,6 +339,7 @@ export async function init() {
   store.settings = { ...DEFAULT_SETTINGS, ...data.settings };
   store.history = data.history;
   store.stats = { ...store.stats, ...data.stats };
+  restoreTasks(data.tasks ?? []);
   syncDocumentTheme();
   await onCoreEvent(handleEvent);
   window

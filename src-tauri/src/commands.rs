@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager, State};
 
 use zhiai_core::model::{ImageItem, QueueCommand, QueueStats, Settings};
 
+use crate::error::{CommandError, CommandResult};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -77,10 +78,25 @@ pub fn clear_finished(state: State<'_, AppState>) {
 }
 
 #[tauri::command]
-pub fn update_settings(state: State<'_, AppState>, settings: Settings) {
-    let _ = zhiai_core::storage::save_settings(&settings);
+pub fn update_settings(state: State<'_, AppState>, settings: Settings) -> CommandResult<()> {
+    let settings = settings.normalized();
+    settings.validate()?;
+    zhiai_core::storage::save_settings(&settings)?;
     state.set_settings(settings.clone());
     let _ = state.commands.send(QueueCommand::UpdateSettings(settings));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reset_settings(state: State<'_, AppState>) -> CommandResult<Settings> {
+    let settings = Settings::default().normalized();
+    settings.validate()?;
+    zhiai_core::storage::save_settings(&settings)?;
+    state.set_settings(settings.clone());
+    let _ = state
+        .commands
+        .send(QueueCommand::UpdateSettings(settings.clone()));
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -90,29 +106,67 @@ pub fn get_bootstrap(state: State<'_, AppState>) -> Value {
         "settings": state.settings_snapshot(),
         "history": state.history_snapshot(),
         "stats": QueueStats::default(),
+        "tasks": state.tasks_snapshot(),
     })
 }
 
 #[tauri::command]
-pub fn set_download_root(state: State<'_, AppState>, path: String) -> Result<String, String> {
+pub fn set_download_root(state: State<'_, AppState>, path: String) -> CommandResult<String> {
     let trimmed = path.trim().trim_matches(|c| c == '"' || c == '\'');
     if trimmed.is_empty() {
-        return Err("目录不能为空".to_string());
+        return Err(CommandError::new("invalid_path", "目录不能为空"));
     }
     let candidate = std::path::Path::new(trimmed);
     let absolute = if candidate.is_absolute() {
         candidate.to_path_buf()
     } else {
-        std::path::absolute(candidate).map_err(|error| format!("路径无效：{error}"))?
+        std::path::absolute(candidate).map_err(|error| CommandError::from_io("路径无效", &error))?
     };
-    std::fs::create_dir_all(&absolute).map_err(|error| format!("无法创建目录：{error}"))?;
+    std::fs::create_dir_all(&absolute)
+        .map_err(|error| CommandError::from_io("无法创建目录", &error))?;
     let normalized = absolute.to_string_lossy().into_owned();
-    let mut settings = state.settings_snapshot();
+    let mut settings = state.settings_snapshot().normalized();
     settings.download_root = normalized.clone();
-    let _ = zhiai_core::storage::save_settings(&settings);
+    settings.validate()?;
+    zhiai_core::storage::save_settings(&settings)?;
     state.set_settings(settings.clone());
     let _ = state.commands.send(QueueCommand::UpdateSettings(settings));
     Ok(normalized)
+}
+
+#[derive(serde::Serialize)]
+pub struct DirectoryStatus {
+    pub exists: bool,
+    pub writable: bool,
+}
+
+/// 保存目录健康检查：存在性与实际可写性，用于设置页即时提示。
+#[tauri::command]
+pub fn check_directory(path: String) -> DirectoryStatus {
+    let trimmed = path.trim().trim_matches(|c| c == '"' || c == '\'');
+    if trimmed.is_empty() {
+        return DirectoryStatus {
+            exists: false,
+            writable: false,
+        };
+    }
+    let directory = std::path::Path::new(trimmed);
+    let exists = directory.is_dir();
+    DirectoryStatus {
+        exists,
+        writable: exists && can_write(directory),
+    }
+}
+
+fn can_write(directory: &std::path::Path) -> bool {
+    let probe = directory.join(format!(".zhiai-write-{}", std::process::id()));
+    match std::fs::write(&probe, b"ok") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 #[tauri::command]
@@ -128,16 +182,18 @@ pub fn open_directory(path: String) {
 }
 
 #[tauri::command]
-pub fn apply_theme(app: AppHandle, mode: String) -> Result<(), String> {
+pub fn apply_theme(app: AppHandle, mode: String) -> CommandResult<()> {
     let window = app
         .get_webview_window("main")
-        .ok_or_else(|| "未找到主窗口".to_string())?;
+        .ok_or_else(|| CommandError::new("window_missing", "未找到主窗口"))?;
     let theme = match mode.as_str() {
         "light" => Some(tauri::Theme::Light),
         "dark" => Some(tauri::Theme::Dark),
         _ => None,
     };
-    window.set_theme(theme).map_err(|error| error.to_string())
+    window
+        .set_theme(theme)
+        .map_err(|error| CommandError::new("window", error.to_string()))
 }
 
 #[derive(serde::Serialize)]
@@ -175,11 +231,7 @@ pub fn library_prepare(state: State<'_, AppState>, paths: Vec<String>) -> Vec<Li
 
 /// 删除素材包：可选同时删除磁盘文件，返回移除的记录数。
 #[tauri::command]
-pub fn library_delete(
-    state: State<'_, AppState>,
-    paths: Vec<String>,
-    delete_files: bool,
-) -> usize {
+pub fn library_delete(state: State<'_, AppState>, paths: Vec<String>, delete_files: bool) -> usize {
     if delete_files {
         let mut dirs = std::collections::HashSet::new();
         for path in &paths {

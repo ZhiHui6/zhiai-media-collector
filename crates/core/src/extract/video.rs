@@ -7,9 +7,8 @@ use url::Url;
 
 use super::normalize::{dedup_key, unescape};
 
-static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"https?:(?:\\?/){2}[^"'\s<>()\[\]]+"#).unwrap()
-});
+static URL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"https?:(?:\\?/){2}[^"'\s<>()\[\]]+"#).unwrap());
 
 const VIDEO_EXTS: [&str; 4] = ["mp4", "m4v", "mov", "webm"];
 
@@ -74,7 +73,9 @@ pub fn iframe_sources(doc: &Html) -> Vec<String> {
 }
 
 fn push(seen: &mut HashSet<String>, videos: &mut Vec<RawVideo>, raw: &str) {
-    let trimmed = raw.trim().trim_end_matches(['\\', ',', ';', '.', ')', ']', '\'']);
+    let trimmed = raw
+        .trim()
+        .trim_end_matches(['\\', ',', ';', '.', ')', ']', '\'']);
     let unescaped = unescape(trimmed);
     let Ok(url) = Url::parse(&unescaped) else {
         return;
@@ -92,7 +93,9 @@ fn push(seen: &mut HashSet<String>, videos: &mut Vec<RawVideo>, raw: &str) {
     let extension = VIDEO_EXTS
         .iter()
         .find(|ext| path.ends_with(&format!(".{ext}")));
-    let contains_ext = VIDEO_EXTS.iter().find(|ext| path.contains(&format!(".{ext}")));
+    let contains_ext = VIDEO_EXTS
+        .iter()
+        .find(|ext| path.contains(&format!(".{ext}")));
     let looks_like_video = extension.is_some()
         || contains_ext.is_some()
         || host.contains("video")

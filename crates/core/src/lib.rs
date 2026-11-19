@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod download;
 pub mod error;
 pub mod extract;

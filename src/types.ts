@@ -3,6 +3,7 @@ export type ItemState = "Queued" | "Downloading" | "Completed" | "Failed" | "Can
 export type PageKind = "Article" | "PicturePost" | "AlbumPage" | "Unknown";
 export type ThemeMode = "System" | "Light" | "Dark";
 export type ConvertTarget = "Jpg" | "Png" | "WebP";
+export type DuplicatePolicy = "Skip" | "AppendSuffix" | "Overwrite";
 
 export interface ImageItem {
   id: number;
@@ -39,6 +40,7 @@ export interface QueueStats {
 }
 
 export interface Settings {
+  schema_version: number;
   theme: ThemeMode;
   download_root: string;
   concurrency: number;
@@ -47,6 +49,25 @@ export interface Settings {
   convert_target: ConvertTarget;
   jpeg_quality: number;
   webp_quality: number;
+  duplicate_policy: DuplicatePolicy;
+  /** KB/s，0 表示不限速。 */
+  speed_limit_kbps: number;
+  /** 批量解析相邻请求的最小间隔（毫秒）。 */
+  parse_interval_ms: number;
+}
+
+export interface TaskRecord {
+  item: ImageItem;
+  state: ItemState;
+  attempts: number;
+  message: string | null;
+  path: string | null;
+}
+
+export interface CommandError {
+  code: string;
+  message: string;
+  detail?: string | null;
 }
 
 export interface HistoryEntry {
@@ -63,7 +84,13 @@ export interface HistoryEntry {
 export type CoreEvent =
   | { type: "parseStarted"; url: string }
   | { type: "batchParsed"; outcome: ParseOutcome }
-  | { type: "itemState"; id: number; state: ItemState; message: string | null }
+  | {
+      type: "itemState";
+      id: number;
+      state: ItemState;
+      message: string | null;
+      action: string | null;
+    }
   | { type: "itemProgress"; id: number; done: number; total: number }
   | { type: "itemCompleted"; id: number; path: string; bytes: number; format: string }
   | { type: "thumbReady"; id: number; width: number; height: number }

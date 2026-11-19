@@ -2,7 +2,7 @@
 name = "zhiai_media_collector"
 version = "0.1.0"
 edition = "2024"
-description = "智爱媒体素材采集器"
+description = "智爱媒体采集器"
 
 [lib]
 name = "zhiai_app"

@@ -70,7 +70,10 @@ function onConcurrency(event: Event) {
           <span class="b-qpct">{{ progressPercent(view.done, view.total) }}%</span>
           <span v-if="view.speed > 1" class="b-qmeta">{{ formatSpeed(view.speed) }}</span>
         </template>
-        <span v-else-if="view.state === 'Failed'" class="b-qmeta danger">{{ view.message ?? "下载失败" }}</span>
+        <span v-else-if="view.state === 'Failed'" class="b-qmeta danger" v-tip="view.message ?? '下载失败'">
+          {{ view.action ? `建议：${view.action}` : view.message ?? "下载失败" }}
+        </span>
+        <span v-else-if="view.state === 'Skipped'" class="b-qmeta">{{ view.message ?? "已跳过" }}</span>
         <span class="spacer"></span>
         <button v-if="view.state === 'Downloading' || view.state === 'Queued'" class="btn sm" @click="cancelItem(view.item.id)">取消</button>
         <button v-else-if="view.state === 'Failed' || view.state === 'Cancelled'" class="btn sm" @click="retryItem(view.item.id)">重试</button>

@@ -16,6 +16,23 @@ pub fn sniff(bytes: &[u8]) -> Option<ImageFormat> {
     image::guess_format(bytes).ok()
 }
 
+/// 判断文件头是否属于已知图片格式，用于识别“长度对但内容坏了”的残留文件。
+pub fn has_known_magic(head: &[u8]) -> bool {
+    if head.starts_with(&[0xFF, 0xD8])
+        || head.starts_with(b"\x89PNG\r\n\x1a\n")
+        || head.starts_with(b"GIF8")
+        || head.starts_with(b"BM")
+        || head.starts_with(b"II*\0")
+        || head.starts_with(b"MM\0*")
+    {
+        return true;
+    }
+    if head.len() >= 12 && &head[0..4] == b"RIFF" && &head[8..12] == b"WEBP" {
+        return true;
+    }
+    head.len() >= 12 && &head[4..8] == b"ftyp"
+}
+
 pub fn format_name(format: ImageFormat) -> &'static str {
     match format {
         ImageFormat::Jpeg => "JPEG",
@@ -184,6 +201,16 @@ mod tests {
     fn sniffs_real_format() {
         assert_eq!(sniff(&sample_png()), Some(ImageFormat::Png));
         assert_eq!(sniff(GIF_1PX), Some(ImageFormat::Gif));
+    }
+
+    #[test]
+    fn recognizes_known_magic_heads() {
+        assert!(has_known_magic(&sample_png()));
+        assert!(has_known_magic(GIF_1PX));
+        assert!(has_known_magic(&[0xFF, 0xD8, 0xFF, 0xE0]));
+        assert!(has_known_magic(b"RIFF\x10\x00\x00\x00WEBPVP8 "));
+        assert!(!has_known_magic(b"<html>not an image"));
+        assert!(!has_known_magic(b""));
     }
 
     #[test]

@@ -1,11 +1,12 @@
 mod bridge;
 mod commands;
+mod error;
 mod media;
 mod state;
 
 use tauri::Manager;
 use zhiai_core::download::{EventSink, queue};
-use zhiai_core::model::ThemeMode;
+use zhiai_core::model::{QueueCommand, ThemeMode};
 use zhiai_core::storage;
 
 use crate::media::MediaKind;
@@ -33,15 +34,14 @@ fn percent_decode(input: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let (Some(high), Some(low)) = (
-                hex_value(bytes[index + 1]),
-                hex_value(bytes[index + 2]),
-            ) {
-                out.push(high * 16 + low);
-                index += 3;
-                continue;
-            }
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && let (Some(high), Some(low)) =
+                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
+        {
+            out.push(high * 16 + low);
+            index += 3;
+            continue;
         }
         out.push(bytes[index]);
         index += 1;
@@ -95,15 +95,28 @@ pub fn run() {
         .setup(|app| {
             storage::migrate_legacy_config();
             let settings = storage::load_settings();
+            // 把老配置的规范化结果立即落盘，后续版本迁移保持幂等。
+            let _ = storage::save_settings(&settings);
             let history = storage::load_history();
+            let recovered = storage::load_tasks();
             let (event_tx, event_rx) = std::sync::mpsc::channel();
             let sink = EventSink::new(event_tx, std::sync::Arc::new(|| {}));
             let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
-            tauri::async_runtime::spawn(queue::run(command_rx, sink, settings.clone()));
-            app.manage(AppState::new(command_tx, settings.clone(), history));
+            tauri::async_runtime::spawn(queue::run(
+                command_rx,
+                sink,
+                settings.clone(),
+                recovered.clone(),
+            ));
+            app.manage(AppState::new(
+                command_tx,
+                settings.clone(),
+                history,
+                recovered,
+            ));
             bridge::spawn(app.handle().clone(), event_rx);
             if let Some(window) = app.get_webview_window("main") {
-                let title = format!("智爱媒体素材采集器 v{}", env!("CARGO_PKG_VERSION"));
+                let title = format!("智爱媒体采集器 v{}", env!("CARGO_PKG_VERSION"));
                 let _ = window.set_title(&title);
                 let theme = match settings.theme {
                     ThemeMode::Light => Some(tauri::Theme::Light),
@@ -127,8 +140,10 @@ pub fn run() {
             commands::set_concurrency,
             commands::clear_finished,
             commands::update_settings,
+            commands::reset_settings,
             commands::get_bootstrap,
             commands::set_download_root,
+            commands::check_directory,
             commands::reveal_path,
             commands::open_directory,
             commands::apply_theme,
@@ -139,7 +154,10 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|handle, event| {
             if let tauri::RunEvent::Exit = event {
-                handle.state::<AppState>().save_history();
+                let state = handle.state::<AppState>();
+                // 尽力让队列 actor 在退出前落盘一次，缩短防抖窗口带来的丢失面。
+                let _ = state.commands.send(QueueCommand::Shutdown);
+                state.save_history();
             }
         });
 }

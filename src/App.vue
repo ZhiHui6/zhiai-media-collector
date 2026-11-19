@@ -119,7 +119,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="shell">
     <header class="titlebar" data-tauri-drag-region>
-      <span class="tb-title" data-tauri-drag-region>智爱媒体素材采集器</span>
+      <span class="tb-title" data-tauri-drag-region>智爱媒体采集器</span>
       <span class="tb-ver" data-tauri-drag-region>v{{ store.version }}</span>
       <span class="spacer" data-tauri-drag-region></span>
       <div class="tb-btns">

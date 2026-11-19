@@ -17,6 +17,11 @@ use crate::model::{ImageItem, ImageKind, PageKind, ParseBatch, ParseOutcome};
 
 static NEXT_ITEM_ID: AtomicU64 = AtomicU64::new(1);
 
+/// 恢复历史任务后抬高 ID 游标，避免重启后新解析的条目与旧任务撞号。
+pub fn ensure_id_above(id: u64) {
+    NEXT_ITEM_ID.fetch_max(id.saturating_add(1), Ordering::Relaxed);
+}
+
 #[derive(Clone)]
 pub struct ClassifiedImage {
     pub url: String,

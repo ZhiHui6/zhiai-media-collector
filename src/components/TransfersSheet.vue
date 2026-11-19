@@ -43,6 +43,7 @@ interface FileRow {
   total: number;
   speed: number;
   message: string | null;
+  action: string | null;
   path: string | null;
   order: number;
   pageUrl: string;
@@ -80,6 +81,7 @@ const queueFiles = computed<FileRow[]>(() =>
       total: view.total,
       speed: view.speed,
       message: view.message,
+      action: view.action,
       path: view.path,
       order: 1e16 + index,
       pageUrl: view.item.page_url,
@@ -104,6 +106,7 @@ const historyFiles = computed<FileRow[]>(() =>
     total: entry.bytes,
     speed: 0,
     message: null,
+    action: null,
     path: entry.path,
     order: Date.parse(entry.finished_at) || 0,
     pageUrl: entry.page_url,
@@ -466,6 +469,9 @@ async function removeSelected() {
                   </div>
                   <div class="tf-desc ellipsis">
                     {{ file.state === "Failed" && file.message ? file.message : file.subtitle }}
+                  </div>
+                  <div v-if="file.action" class="tf-advice ellipsis">
+                    建议：{{ file.action }}
                   </div>
                 </div>
               </div>

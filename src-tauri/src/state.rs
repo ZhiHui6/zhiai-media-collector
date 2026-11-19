@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use zhiai_core::model::{HistoryEntry, ImageItem, QueueCommand, Settings};
+use zhiai_core::model::{HistoryEntry, ImageItem, QueueCommand, Settings, TaskRecord};
 
 use crate::media::MediaCache;
 
@@ -12,6 +12,7 @@ pub struct AppState {
     pub history: Mutex<Vec<HistoryEntry>>,
     pub settings: Mutex<Settings>,
     pub media: MediaCache,
+    tasks: Vec<TaskRecord>,
     library_files: Mutex<(u64, HashMap<u64, String>)>,
 }
 
@@ -20,16 +21,31 @@ impl AppState {
         commands: tokio::sync::mpsc::UnboundedSender<QueueCommand>,
         settings: Settings,
         history: Vec<HistoryEntry>,
+        tasks: Vec<TaskRecord>,
     ) -> Self {
+        // 恢复的任务也要可预览/可再次入队，因此同步回填 item 与路径索引。
+        let mut items = HashMap::new();
+        let mut paths = HashMap::new();
+        for task in &tasks {
+            items.insert(task.item.id, task.item.clone());
+            if let Some(path) = &task.path {
+                paths.insert(task.item.id, path.clone());
+            }
+        }
         Self {
             commands,
-            items: Mutex::new(HashMap::new()),
-            paths: Mutex::new(HashMap::new()),
+            items: Mutex::new(items),
+            paths: Mutex::new(paths),
             history: Mutex::new(history),
             settings: Mutex::new(settings),
             media: MediaCache::new(),
+            tasks,
             library_files: Mutex::new((0, HashMap::new())),
         }
+    }
+
+    pub fn tasks_snapshot(&self) -> Vec<TaskRecord> {
+        self.tasks.clone()
     }
 
     pub fn register_library_file(&self, path: &str) -> u64 {
