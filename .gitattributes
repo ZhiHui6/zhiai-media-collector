@@ -1,0 +1,22 @@
+# 统一换行符：仓库内统一存储 LF，检出时按平台规则处理
+* text=auto eol=lf
+
+# Windows 脚本保持 CRLF，避免 cmd/PowerShell 解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制资源不做换行符转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.dll binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
