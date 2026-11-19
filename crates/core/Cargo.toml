@@ -1,0 +1,20 @@
+[package]
+name = "zhiai_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset", "http2", "gzip", "stream"] }
+scraper = "0.29"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+webp = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+url = "2"
+thiserror = "2"
+dirs = "7"
+futures-util = "0.3"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
